@@ -28,6 +28,16 @@ const TIMER_PRESETS = [
   { label: '10 minutes', duration: { minutes: 10 } },
 ];
 
+const ADJUST_TIME_PRESETS = [
+  { label: '30 seconds', value: 30000 },
+  { label: '1 minute', value: 60000 },
+  { label: '2 minutes', value: 120000 },
+  { label: '5 minutes', value: 300000 },
+  { label: '15 minutes', value: 900000 },
+  { label: '30 minutes', value: 1800000 },
+  { label: '60 minutes', value: 3600000 },
+];
+
 export default function App() {
   const viewerUrl = `https://stagetimer.io/r/${ROOM_ID}/`;
 
@@ -40,8 +50,11 @@ export default function App() {
   const [isTimersExpanded, setIsTimersExpanded] = useState(true);
   const [isAddTimerExpanded, setIsAddTimerExpanded] = useState(false);
   const [isDeleteTimerExpanded, setIsDeleteTimerExpanded] = useState(false);
+  const [isAdjustTimeExpanded, setIsAdjustTimeExpanded] = useState(false);
+  const [isActionsExpanded, setIsActionsExpanded] = useState(false);
   const [editingTimerId, setEditingTimerId] = useState(null);
   const [editingTimerName, setEditingTimerName] = useState('');
+  const [isFlashing, setIsFlashing] = useState(false);
 
   // --- API CALLS ---
   const sendApiRequest = async (endpoint, params = {}) => {
@@ -100,6 +113,15 @@ export default function App() {
   const handleStartPause = () => sendApiRequest('/start_or_stop');
   const handleNext = () => sendApiRequest('/next');
   const handlePrevious = () => sendApiRequest('/previous');
+  const handleReset = () => sendApiRequest('/reset');
+  const handleToggleMessage = () => sendApiRequest('/show_or_hide_message');
+  const handleToggleFlash = () => {
+    const endpoint = isFlashing ? '/stop_flashing' : '/start_flashing';
+    sendApiRequest(endpoint);
+    setIsFlashing(!isFlashing);
+  };
+  const handleAddTime = (milliseconds) => sendApiRequest('/jump', { milliseconds });
+  const handleSubtractTime = (milliseconds) => sendApiRequest('/jump', { milliseconds: -milliseconds });
 
   // --- LIFECYCLE & SOCKETS ---
   useEffect(() => {
@@ -128,7 +150,7 @@ export default function App() {
         <View style={styles.viewerFrame}><View style={styles.viewerInner}><WebView source={{ uri: viewerUrl }} style={styles.webview} javaScriptEnabled domStorageEnabled startInLoadingState /></View></View>
 
         <ScrollView style={styles.middle}>
-          {/* TIMERS LIST */}
+          {/* TIMERS LIST, ADD, DELETE, ADJUST TIME CONTAINERS... */}
           <View style={styles.foldableFrame}>
             <Pressable style={styles.foldableHeader} onPress={() => setIsTimersExpanded(!isTimersExpanded)}>
               <Text style={styles.headerText}>Timers</Text>
@@ -174,7 +196,6 @@ export default function App() {
             )}
           </View>
 
-          {/* ADD TIMER */}
           <View style={styles.foldableFrame}>
             <Pressable style={styles.foldableHeader} onPress={() => setIsAddTimerExpanded(!isAddTimerExpanded)}>
               <Text style={styles.headerText}>Add Timer</Text>
@@ -192,7 +213,6 @@ export default function App() {
             )}
           </View>
 
-          {/* DELETE TIMER */}
           <View style={styles.foldableFrame}>
             <Pressable style={styles.foldableHeader} onPress={() => setIsDeleteTimerExpanded(!isDeleteTimerExpanded)}>
               <Text style={styles.headerText}>Delete Timer</Text>
@@ -209,8 +229,55 @@ export default function App() {
               </View>
             )}
           </View>
+
+          <View style={styles.foldableFrame}>
+            <Pressable style={styles.foldableHeader} onPress={() => setIsAdjustTimeExpanded(!isAdjustTimeExpanded)}>
+              <Text style={styles.headerText}>Add / Subtract Time</Text>
+              <Icon name={isAdjustTimeExpanded ? 'expand-less' : 'expand-more'} size={30} color="#00e5ff" />
+            </Pressable>
+            {isAdjustTimeExpanded && (
+              <View style={styles.foldableContent}>
+                {ADJUST_TIME_PRESETS.map((preset) => (
+                    <View key={preset.label} style={styles.adjustTimeRow}>
+                        <TouchableOpacity style={styles.adjustTimeButton} onPress={() => handleSubtractTime(preset.value)}>
+                            <Icon name="remove" size={24} color="#dc3545" />
+                        </TouchableOpacity>
+                        <Text style={styles.adjustTimeLabel}>{preset.label}</Text>
+                        <TouchableOpacity style={styles.adjustTimeButton} onPress={() => handleAddTime(preset.value)}>
+                            <Icon name="add" size={24} color="#28a745" />
+                        </TouchableOpacity>
+                    </View>
+                ))}
+              </View>
+            )}
+          </View>
         </ScrollView>
 
+        {/* REFACTORED ACTIONS CONTAINER */}
+        <View style={styles.actionsContainer}>
+          <Pressable style={styles.actionsHeader} onPress={() => setIsActionsExpanded(!isActionsExpanded)}>
+            <Text style={styles.actionsHeaderText}>Additional controls</Text>
+            <Icon name={isActionsExpanded ? 'expand-more' : 'expand-less'} size={24} color="#888" />
+          </Pressable>
+          {isActionsExpanded && (
+            <View style={styles.actionsContent}>
+              <TouchableOpacity style={styles.extraBtn} onPress={handleReset}>
+                <Icon name="refresh" size={24} color="#ccc" />
+                <Text style={styles.extraBtnText}>Reset</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.extraBtn} onPress={handleToggleMessage}>
+                <Icon name="message" size={24} color="#ccc" />
+                <Text style={styles.extraBtnText}>Message</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.extraBtn, isFlashing && styles.extraBtnActive]} onPress={handleToggleFlash}>
+                <Icon name="flash-on" size={24} color={isFlashing ? '#00e5ff' : '#ccc'} />
+                <Text style={[styles.extraBtnText, isFlashing && styles.extraBtnTextActive]}>Flash</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
+        {/* MAIN TRANSPORT CONTROLS */}
         <View style={styles.controls}>
           <TouchableOpacity style={[styles.btn, styles.navBtn]} onPress={handlePrevious}><Icon name="skip-previous" size={40} color="#5bc0de" /></TouchableOpacity>
           <TouchableOpacity style={[styles.btn, isRunning ? styles.pauseBtn : styles.playBtn]} onPress={handleStartPause}><Icon name={isRunning ? 'pause' : 'play-arrow'} size={50} color="#fff" /></TouchableOpacity>
@@ -223,7 +290,7 @@ export default function App() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#111' },
-  viewerFrame: { height: 150, padding: 6, borderRadius: 18, borderWidth: 3, borderColor: '#00e5ff', backgroundColor: '#00181c', shadowColor: '#00e5ff', shadowOpacity: 0.8, shadowRadius: 12, elevation: 10 },
+  viewerFrame: { height: 150, padding: 6, borderRadius: 18, borderWidth: 3, borderColor: '#00e5ff', backgroundColor: '#00181c', shadowColor: '#00e5ff', shadowOpacity: 0.8, shadowRadius: 12, elevation: 10, marginHorizontal: 10, marginTop: 10 },
   viewerInner: { flex: 1, borderRadius: 12, overflow: 'hidden', backgroundColor: '#000' },
   webview: { flex: 1 },
   middle: { flex: 1, paddingHorizontal: 10, paddingTop: 20 },
@@ -235,23 +302,50 @@ const styles = StyleSheet.create({
   timerItemContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10 },
   timerNameContainer: { flex: 1, marginRight: 10 },
   timerName: { color: '#eee', fontSize: 16 },
-  
-  // --- UPDATED STYLE FOR ACTIVE TIMER ---
-  activeTimerItem: {
-    backgroundColor: 'rgba(0, 229, 255, 0.15)',
-    borderRadius: 6,
-    paddingHorizontal: 8, // Gives the glow effect some space
-    paddingVertical: 8,   // Match selected item's padding
-  },
+  activeTimerItem: { backgroundColor: 'rgba(0, 229, 255, 0.15)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 8 },
   activeTimerName: { color: '#00e5ff', fontWeight: 'bold' },
   selectedTimerItem: { borderColor: '#5bc0de', borderWidth: 2, borderRadius: 6, backgroundColor: 'rgba(91, 192, 222, 0.1)', paddingVertical: 8, paddingHorizontal: 8 },
-  
   iconContainer: { flexDirection: 'row', alignItems: 'center' },
   loadingText: { color: '#888', paddingVertical: 12 },
   presetItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#003339' },
   presetItemText: { color: '#eee', marginLeft: 10, fontSize: 16 },
   deleteItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#003339' },
   deleteItemText: { color: '#eee', marginLeft: 10, fontSize: 16 },
+  
+  // --- REFACTORED STYLES for Actions ---
+  actionsContainer: {
+    paddingHorizontal: 10,
+    paddingBottom: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#222',
+  },
+  actionsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  actionsHeaderText: {
+    color: '#888',
+    fontSize: 14,
+    marginRight: 4,
+  },
+  actionsContent: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#222',
+  },
+  extraBtn: { alignItems: 'center', padding: 8, borderRadius: 8, width: 80, marginHorizontal: 10 },
+  extraBtnActive: { backgroundColor: 'rgba(0, 229, 255, 0.15)' },
+  extraBtnText: { color: '#ccc', marginTop: 4, fontSize: 12 },
+  extraBtnTextActive: { color: '#00e5ff' },
+  
+  adjustTimeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8 },
+  adjustTimeLabel: { color: '#eee', fontSize: 16, textAlign: 'center' },
+  adjustTimeButton: { backgroundColor: '#222', padding: 8, borderRadius: 20 },
   controls: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', backgroundColor: '#000', paddingVertical: 16 },
   btn: { padding: 20, borderRadius: 50, backgroundColor: '#333', alignItems: 'center', justifyContent: 'center', marginHorizontal: 10 },
   pauseBtn: { backgroundColor: '#dc3545' },
