@@ -13,9 +13,11 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import { MaterialIcons as Icon } from '@expo/vector-icons';
 import { io } from 'socket.io-client';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const ROOM_ID = '55T3E3HN';
-const API_KEY = '087a607d0b6b88601123f9ccdba3a898';
+// Default values, will be replaced by saved settings
+const DEFAULT_ROOM_ID = '55T3E3HN';
+const DEFAULT_API_KEY = '087a607d0b6b88601123f9ccdba3a898';
 
 const API_BASE_URL = 'https://api.stagetimer.io/v1';
 const SOCKET_URL = 'https://api.stagetimer.io';
@@ -39,27 +41,41 @@ const ADJUST_TIME_PRESETS = [
 ];
 
 export default function App() {
-  const viewerUrl = `https://stagetimer.io/r/${ROOM_ID}/`;
-
   // --- STATE MANAGEMENT ---
+  const [roomId, setRoomId] = useState(DEFAULT_ROOM_ID);
+  const [apiKey, setApiKey] = useState(DEFAULT_API_KEY);
+  // Temp state for settings inputs
+  const [tempRoomId, setTempRoomId] = useState('');
+  const [tempApiKey, setTempApiKey] = useState('');
+  
   const [isRunning, setIsRunning] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [timers, setTimers] = useState([]);
   const [currentTimerId, setCurrentTimerId] = useState(null);
   const [selectedTimerId, setSelectedTimerId] = useState(null);
+  
+  // Foldable states
   const [isTimersExpanded, setIsTimersExpanded] = useState(true);
   const [isAddTimerExpanded, setIsAddTimerExpanded] = useState(false);
   const [isDeleteTimerExpanded, setIsDeleteTimerExpanded] = useState(false);
   const [isAdjustTimeExpanded, setIsAdjustTimeExpanded] = useState(false);
   const [isActionsExpanded, setIsActionsExpanded] = useState(false);
+  const [isSettingsExpanded, setIsSettingsExpanded] = useState(false);
+
   const [editingTimerId, setEditingTimerId] = useState(null);
   const [editingTimerName, setEditingTimerName] = useState('');
   const [isFlashing, setIsFlashing] = useState(false);
+  
+  const viewerUrl = `https://stagetimer.io/r/${roomId}/`;
 
-  // --- API CALLS ---
-  const sendApiRequest = async (endpoint, params = {}) => {
+  // --- API & DATA ---
+  const sendApiRequest = useCallback(async (endpoint, params = {}) => {
+    if (!roomId || !apiKey) {
+      Alert.alert('Missing Credentials', 'Please set Room ID and API Key in Settings.');
+      return;
+    }
     try {
-      const query = new URLSearchParams({ room_id: ROOM_ID, api_key: API_KEY, ...params });
+      const query = new URLSearchParams({ room_id: roomId, api_key: apiKey, ...params });
       const url = `${API_BASE_URL}${endpoint}?${query.toString()}`;
       const res = await fetch(url, { method: 'GET' });
       if (!res.ok) throw new Error(await res.text());
@@ -67,21 +83,85 @@ export default function App() {
       console.error('API Error:', e);
       Alert.alert('Error', e.message);
     }
-  };
+  }, [roomId, apiKey]);
 
   const fetchAllTimers = useCallback(async () => {
+    if (!roomId || !apiKey) return;
     try {
-      const url = `${API_BASE_URL}/get_all_timers?room_id=${ROOM_ID}&api_key=${API_KEY}`;
+      const query = new URLSearchParams({ room_id: roomId, api_key: apiKey });
+      const url = `${API_BASE_URL}/get_all_timers?${query.toString()}`;
       const res = await fetch(url);
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.message || 'Failed to fetch timers');
-      setTimers(json.data);
+      setTimers(json.data || []);
     } catch (e) {
       console.error('Fetch Timers Error:', e);
-      Alert.alert('Error', 'Could not load timers.');
+      setTimers([]);
     }
+  }, [roomId, apiKey]);
+
+  // --- SETTINGS PERSISTENCE ---
+  const saveSettings = async () => {
+    try {
+      await AsyncStorage.setItem('@roomId', tempRoomId);
+      await AsyncStorage.setItem('@apiKey', tempApiKey);
+      setRoomId(tempRoomId);
+      setApiKey(tempApiKey);
+      setIsSettingsExpanded(false);
+      Alert.alert('Success', 'Settings saved. The app will now use the new credentials.');
+    } catch (e) {
+      Alert.alert('Error', 'Failed to save settings.');
+    }
+  };
+
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const savedRoomId = await AsyncStorage.getItem('@roomId');
+        const savedApiKey = await AsyncStorage.getItem('@apiKey');
+        if (savedRoomId !== null) {
+          setRoomId(savedRoomId);
+          setTempRoomId(savedRoomId);
+        }
+        if (savedApiKey !== null) {
+          setApiKey(savedApiKey);
+          setTempApiKey(savedApiKey);
+        }
+      } catch (e) {
+        Alert.alert('Error', 'Failed to load settings.');
+      }
+    };
+    loadSettings();
   }, []);
 
+  // --- LIFECYCLE & SOCKETS ---
+  useEffect(() => {
+    fetchAllTimers();
+  }, [fetchAllTimers]);
+
+  useEffect(() => {
+    if (!roomId || !apiKey) {
+      setIsConnected(false);
+      return;
+    }
+    const socket = io(SOCKET_URL, { path: '/v1/socket.io', auth: { room_id: roomId, api_key: apiKey } });
+    socket.on('connect', () => setIsConnected(true));
+    socket.on('disconnect', () => setIsConnected(false));
+    socket.on('connect_error', (err) => {
+      console.error('Socket connection error:', err.message);
+      setIsConnected(false);
+    });
+    socket.on('playback_status', (data) => {
+      setIsRunning(!!data?.running);
+      setCurrentTimerId(data?.timer_id);
+      if (selectedTimerId === data?.timer_id) setSelectedTimerId(null);
+    });
+    socket.on('timers', () => fetchAllTimers());
+    return () => socket.disconnect();
+  }, [roomId, apiKey, fetchAllTimers, selectedTimerId]);
+
+
+  // --- EVENT HANDLERS ---
   const handleUpdateTimerName = async (timerId, newName) => {
     if (editingTimerId !== timerId) return;
     const originalTimer = timers.find((t) => t._id === timerId);
@@ -105,11 +185,9 @@ export default function App() {
         await sendApiRequest('/delete_timer', { timer_id: timer._id });
         await fetchAllTimers();
       }}],
-      { cancelable: true }
     );
   };
-
-  const handlePlayTimer = (timerId) => { sendApiRequest('/start_timer', { timer_id: timerId }); setSelectedTimerId(null); };
+  const handlePlayTimer = (timerId) => sendApiRequest('/start_timer', { timer_id: timerId });
   const handleStartPause = () => sendApiRequest('/start_or_stop');
   const handleNext = () => sendApiRequest('/next');
   const handlePrevious = () => sendApiRequest('/previous');
@@ -123,26 +201,6 @@ export default function App() {
   const handleAddTime = (milliseconds) => sendApiRequest('/jump', { milliseconds });
   const handleSubtractTime = (milliseconds) => sendApiRequest('/jump', { milliseconds: -milliseconds });
 
-  // --- LIFECYCLE & SOCKETS ---
-  useEffect(() => {
-    const fetchCurrentTimer = async () => { /* ... */ };
-    fetchAllTimers();
-    fetchCurrentTimer();
-  }, [fetchAllTimers]);
-
-  useEffect(() => {
-    const socket = io(SOCKET_URL, { path: '/v1/socket.io', auth: { room_id: ROOM_ID, api_key: API_KEY } });
-    socket.on('connect', () => setIsConnected(true));
-    socket.on('disconnect', () => setIsConnected(false));
-    socket.on('playback_status', (data) => {
-      setIsRunning(!!data?.running);
-      setCurrentTimerId(data?.timer_id);
-      if (selectedTimerId === data?.timer_id) setSelectedTimerId(null);
-    });
-    socket.on('timers', () => fetchAllTimers());
-    return () => socket.disconnect();
-  }, [fetchAllTimers, selectedTimerId]);
-
   // --- RENDER ---
   return (
     <SafeAreaProvider>
@@ -150,7 +208,6 @@ export default function App() {
         <View style={styles.viewerFrame}><View style={styles.viewerInner}><WebView source={{ uri: viewerUrl }} style={styles.webview} javaScriptEnabled domStorageEnabled startInLoadingState /></View></View>
 
         <ScrollView style={styles.middle}>
-          {/* TIMERS LIST, ADD, DELETE, ADJUST TIME CONTAINERS... */}
           <View style={styles.foldableFrame}>
             <Pressable style={styles.foldableHeader} onPress={() => setIsTimersExpanded(!isTimersExpanded)}>
               <Text style={styles.headerText}>Timers</Text>
@@ -251,9 +308,44 @@ export default function App() {
               </View>
             )}
           </View>
-        </ScrollView>
 
-        {/* REFACTORED ACTIONS CONTAINER */}
+          <View style={styles.foldableFrame}>
+            <Pressable style={styles.foldableHeader} onPress={() => {
+              setTempRoomId(roomId);
+              setTempApiKey(apiKey);
+              setIsSettingsExpanded(!isSettingsExpanded);
+            }}>
+              <Text style={styles.headerText}>Settings</Text>
+              <Icon name={isSettingsExpanded ? 'expand-less' : 'expand-more'} size={30} color="#00e5ff" />
+            </Pressable>
+            {isSettingsExpanded && (
+              <View style={styles.foldableContent}>
+                <Text style={styles.inputLabel}>Room ID</Text>
+                <TextInput
+                  style={styles.input}
+                  value={tempRoomId}
+                  onChangeText={setTempRoomId}
+                  placeholder="e.g., 55T3E3HN"
+                  placeholderTextColor="#666"
+                  autoCapitalize="characters"
+                />
+                <Text style={styles.inputLabel}>API Key</Text>
+                <TextInput
+                  style={styles.input}
+                  value={tempApiKey}
+                  onChangeText={setTempApiKey}
+                  placeholder="Your API Key"
+                  placeholderTextColor="#666"
+                  secureTextEntry
+                />
+                <TouchableOpacity style={styles.saveButton} onPress={saveSettings}>
+                  <Text style={styles.saveButtonText}>Save & Reconnect</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </ScrollView>
+        
         <View style={styles.actionsContainer}>
           <Pressable style={styles.actionsHeader} onPress={() => setIsActionsExpanded(!isActionsExpanded)}>
             <Text style={styles.actionsHeaderText}>Additional controls</Text>
@@ -277,7 +369,6 @@ export default function App() {
           )}
         </View>
 
-        {/* MAIN TRANSPORT CONTROLS */}
         <View style={styles.controls}>
           <TouchableOpacity style={[styles.btn, styles.navBtn]} onPress={handlePrevious}><Icon name="skip-previous" size={40} color="#5bc0de" /></TouchableOpacity>
           <TouchableOpacity style={[styles.btn, isRunning ? styles.pauseBtn : styles.playBtn]} onPress={handleStartPause}><Icon name={isRunning ? 'pause' : 'play-arrow'} size={50} color="#fff" /></TouchableOpacity>
@@ -311,41 +402,21 @@ const styles = StyleSheet.create({
   presetItemText: { color: '#eee', marginLeft: 10, fontSize: 16 },
   deleteItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#003339' },
   deleteItemText: { color: '#eee', marginLeft: 10, fontSize: 16 },
-  
-  // --- REFACTORED STYLES for Actions ---
-  actionsContainer: {
-    paddingHorizontal: 10,
-    paddingBottom: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#222',
-  },
-  actionsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  actionsHeaderText: {
-    color: '#888',
-    fontSize: 14,
-    marginRight: 4,
-  },
-  actionsContent: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#222',
-  },
+  actionsContainer: { paddingHorizontal: 10, paddingBottom: 10, borderTopWidth: 1, borderTopColor: '#222' },
+  actionsHeader: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 8 },
+  actionsHeaderText: { color: '#888', fontSize: 14, marginRight: 4 },
+  actionsContent: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingTop: 10, borderTopWidth: 1, borderTopColor: '#222' },
   extraBtn: { alignItems: 'center', padding: 8, borderRadius: 8, width: 80, marginHorizontal: 10 },
   extraBtnActive: { backgroundColor: 'rgba(0, 229, 255, 0.15)' },
   extraBtnText: { color: '#ccc', marginTop: 4, fontSize: 12 },
   extraBtnTextActive: { color: '#00e5ff' },
-  
   adjustTimeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8 },
   adjustTimeLabel: { color: '#eee', fontSize: 16, textAlign: 'center' },
   adjustTimeButton: { backgroundColor: '#222', padding: 8, borderRadius: 20 },
+  inputLabel: { color: '#ccc', fontSize: 14, marginTop: 10, marginBottom: 5 },
+  input: { backgroundColor: '#000', color: '#fff', borderRadius: 6, borderWidth: 1, borderColor: '#333', paddingHorizontal: 10, paddingVertical: 8, fontSize: 16 },
+  saveButton: { backgroundColor: '#00e5ff', borderRadius: 6, paddingVertical: 12, alignItems: 'center', marginTop: 20 },
+  saveButtonText: { color: '#00181c', fontSize: 16, fontWeight: 'bold' },
   controls: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', backgroundColor: '#000', paddingVertical: 16 },
   btn: { padding: 20, borderRadius: 50, backgroundColor: '#333', alignItems: 'center', justifyContent: 'center', marginHorizontal: 10 },
   pauseBtn: { backgroundColor: '#dc3545' },
