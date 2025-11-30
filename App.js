@@ -348,12 +348,12 @@ export default function App() {
 
   const handleAddTime = (milliseconds) => {
     triggerHaptic('light');
-    sendApiRequest('/jump', { milliseconds });
+    sendApiRequest('/jump', { milliseconds: -milliseconds });
   };
 
   const handleSubtractTime = (milliseconds) => {
     triggerHaptic('light');
-    sendApiRequest('/jump', { milliseconds: -milliseconds });
+    sendApiRequest('/jump', { milliseconds });
   };
 
   // --- RENDER ---
@@ -660,7 +660,7 @@ const styles = StyleSheet.create({
   foldableHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 10 },
   headerText: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
   foldableContent: { paddingHorizontal: 10, paddingBottom: 10, marginTop: 10, borderTopWidth: 1, borderTopColor: '#004a54' },
-  foldableContentScrollable: { paddingHorizontal: 10, paddingBottom: 10, marginTop: 10, borderTopWidth: 1, borderTopColor: '#004a54', maxHeight: 250 },
+  foldableContentScrollable: { paddingHorizontal: 10, paddingBottom: 10, marginTop: 10, borderTopWidth: 1, borderTopColor: '#004a54', maxHeight: 600 },
 
   // Timer items
   timerItemWrapper: { borderBottomWidth: 1, borderBottomColor: '#003339' },
