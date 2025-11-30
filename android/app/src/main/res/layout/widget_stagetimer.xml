@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_background"
+    android:padding="12dp">
+
+    <!-- Timer Name -->
+    <TextView
+        android:id="@+id/timer_name"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="StageTimer Remote"
+        android:textColor="#00e5ff"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:gravity="center"
+        android:ellipsize="end"
+        android:maxLines="1" />
+
+    <!-- Time Display -->
+    <TextView
+        android:id="@+id/timer_display"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="--:--"
+        android:textColor="#FFFFFF"
+        android:textSize="32sp"
+        android:textStyle="bold"
+        android:fontFamily="monospace"
+        android:gravity="center"
+        android:layout_marginTop="4dp"
+        android:layout_marginBottom="8dp" />
+
+    <!-- Control Buttons -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center">
+
+        <!-- Play/Pause Button -->
+        <ImageButton
+            android:id="@+id/btn_play_pause"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:src="@drawable/ic_play"
+            android:background="@drawable/widget_button_background"
+            android:contentDescription="Play/Pause"
+            android:scaleType="centerInside"
+            android:padding="10dp" />
+
+        <!-- Stop Button -->
+        <ImageButton
+            android:id="@+id/btn_stop"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:src="@drawable/ic_stop"
+            android:background="@drawable/widget_button_background"
+            android:contentDescription="Stop"
+            android:scaleType="centerInside"
+            android:padding="10dp"
+            android:layout_marginStart="12dp" />
+
+        <!-- Next Timer Button -->
+        <ImageButton
+            android:id="@+id/btn_next"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:src="@drawable/ic_next"
+            android:background="@drawable/widget_button_background"
+            android:contentDescription="Next Timer"
+            android:scaleType="centerInside"
+            android:padding="10dp"
+            android:layout_marginStart="12dp" />
+
+    </LinearLayout>
+
+</LinearLayout>

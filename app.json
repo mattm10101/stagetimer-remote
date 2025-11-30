@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "StageTimerRemote",
+    "name": "StageTimer Remote",
     "slug": "StageTimerRemote",
     "version": "1.0.0",
     "orientation": "default",
@@ -13,17 +13,32 @@
       "backgroundColor": "#111111"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mattm10101.stagetimerremote",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        }
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#111111"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.mattm10101.stagetimerremote",
+      "versionCode": 1
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "your-project-id"
+      }
+    },
+    "plugins": []
   }
 }

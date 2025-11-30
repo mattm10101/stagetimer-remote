@@ -11,6 +11,8 @@ import {
   Animated,
   Modal,
   Alert,
+  NativeModules,
+  Platform,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
@@ -18,6 +20,9 @@ import { MaterialIcons as Icon } from '@expo/vector-icons';
 import { io } from 'socket.io-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
+
+// Widget bridge for Android
+const { WidgetBridge } = NativeModules;
 
 // Default values, will be replaced by saved settings
 const DEFAULT_ROOM_ID = '55T3E3HN';
@@ -186,6 +191,16 @@ export default function App() {
       setRoomId(tempRoomId);
       setApiKey(tempApiKey);
       setIsSettingsExpanded(false);
+
+      // Sync with Android widget
+      if (Platform.OS === 'android' && WidgetBridge) {
+        try {
+          await WidgetBridge.saveCredentials(tempRoomId, tempApiKey);
+        } catch (widgetErr) {
+          console.warn('Widget sync failed:', widgetErr);
+        }
+      }
+
       showToast('Settings saved successfully', 'success');
       triggerHaptic('success');
     } catch (e) {
@@ -206,6 +221,15 @@ export default function App() {
         if (savedApiKey !== null) {
           setApiKey(savedApiKey);
           setTempApiKey(savedApiKey);
+        }
+
+        // Sync with Android widget on startup
+        if (Platform.OS === 'android' && WidgetBridge && savedRoomId && savedApiKey) {
+          try {
+            await WidgetBridge.saveCredentials(savedRoomId, savedApiKey);
+          } catch (widgetErr) {
+            console.warn('Widget sync failed:', widgetErr);
+          }
         }
       } catch (e) {
         showToast('Failed to load settings', 'error');

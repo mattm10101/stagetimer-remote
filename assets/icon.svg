@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Background -->
+  <rect width="1024" height="1024" rx="200" fill="#111111"/>
+
+  <!-- Outer glow ring -->
+  <circle cx="512" cy="540" r="380" fill="none" stroke="#00e5ff" stroke-width="8" opacity="0.3"/>
+
+  <!-- Timer circle background -->
+  <circle cx="512" cy="540" r="340" fill="#00181c" stroke="#00e5ff" stroke-width="12"/>
+
+  <!-- Progress arc (about 75%) -->
+  <circle cx="512" cy="540" r="290" fill="none" stroke="#00e5ff" stroke-width="40"
+    stroke-linecap="round" stroke-dasharray="1370 1825" transform="rotate(-90 512 540)" opacity="0.8"/>
+
+  <!-- Center display area -->
+  <rect x="320" y="460" width="384" height="160" rx="20" fill="#000" stroke="#004a54" stroke-width="4"/>
+
+  <!-- Time display text -->
+  <text x="512" y="565" text-anchor="middle" font-family="monospace" font-size="100" font-weight="bold" fill="#00e5ff">2:45</text>
+
+  <!-- Top button/crown -->
+  <rect x="472" y="100" width="80" height="60" rx="10" fill="#333"/>
+  <rect x="482" y="80" width="60" height="40" rx="8" fill="#00e5ff"/>
+
+  <!-- Play indicator triangle -->
+  <polygon points="680,540 740,500 740,580" fill="#28a745" opacity="0.9"/>
+</svg>
