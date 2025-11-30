@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 500" width="1024" height="500">
+  <!-- Background gradient -->
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#001a1f;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#002a33;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#001a1f;stop-opacity:1" />
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1024" height="500" fill="url(#bgGrad)"/>
+
+  <!-- Decorative circles -->
+  <circle cx="150" cy="250" r="300" fill="none" stroke="#00e5ff" stroke-width="1" opacity="0.1"/>
+  <circle cx="150" cy="250" r="250" fill="none" stroke="#00e5ff" stroke-width="1" opacity="0.15"/>
+  <circle cx="874" cy="250" r="300" fill="none" stroke="#00e5ff" stroke-width="1" opacity="0.1"/>
+
+  <!-- App Icon (simplified) -->
+  <g transform="translate(100, 150)">
+    <!-- Icon background -->
+    <rect width="200" height="200" rx="40" fill="#111111" stroke="#00e5ff" stroke-width="3"/>
+
+    <!-- Timer circle -->
+    <circle cx="100" cy="108" r="70" fill="none" stroke="#00e5ff" stroke-width="6" opacity="0.8"/>
+
+    <!-- Progress arc -->
+    <circle cx="100" cy="108" r="55" fill="none" stroke="#00e5ff" stroke-width="10"
+      stroke-linecap="round" stroke-dasharray="260 350" transform="rotate(-90 100 108)" opacity="0.6"/>
+
+    <!-- Display -->
+    <rect x="45" y="80" width="110" height="56" rx="8" fill="#000" stroke="#004a54" stroke-width="2"/>
+    <text x="100" y="120" text-anchor="middle" font-family="monospace" font-size="28" font-weight="bold" fill="#00e5ff">2:45</text>
+
+    <!-- Play indicator -->
+    <polygon points="155,108 175,95 175,121" fill="#28a745" opacity="0.9"/>
+  </g>
+
+  <!-- App Name -->
+  <text x="380" y="220" font-family="SF Pro Display, -apple-system, Helvetica, sans-serif" font-size="64" font-weight="bold" fill="#ffffff">
+    StageTimer
+  </text>
+  <text x="380" y="290" font-family="SF Pro Display, -apple-system, Helvetica, sans-serif" font-size="64" font-weight="bold" fill="#00e5ff">
+    Remote
+  </text>
+
+  <!-- Tagline -->
+  <text x="380" y="360" font-family="SF Pro Display, -apple-system, Helvetica, sans-serif" font-size="28" fill="#888888">
+    Control Your Timers Anywhere
+  </text>
+
+  <!-- Control icons hint -->
+  <g transform="translate(380, 400)" opacity="0.6">
+    <rect x="0" y="0" width="50" height="50" rx="25" fill="#28a745"/>
+    <polygon points="20,15 20,35 35,25" fill="#fff"/>
+
+    <rect x="70" y="0" width="50" height="50" rx="25" fill="#dc3545"/>
+    <rect x="85" y="15" width="20" height="20" fill="#fff"/>
+
+    <rect x="140" y="0" width="50" height="50" rx="25" fill="#00e5ff"/>
+    <polygon points="150,25 165,15 165,35" fill="#00181c"/>
+    <rect x="168" y="15" width="6" height="20" fill="#00181c"/>
+  </g>
+</svg>
