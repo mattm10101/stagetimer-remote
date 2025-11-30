@@ -132,6 +132,12 @@ export default function App() {
   const [wizardApiKey, setWizardApiKey] = useState('');
   const setupWebViewRef = useRef(null);
 
+  // Multiple rooms support
+  const [savedRooms, setSavedRooms] = useState([]); // [{id, name, roomId, apiKey}]
+  const [roomSwitcherVisible, setRoomSwitcherVisible] = useState(false);
+  const [addRoomModalVisible, setAddRoomModalVisible] = useState(false);
+  const [newRoomName, setNewRoomName] = useState('');
+
   const socketRef = useRef(null);
   const viewerUrl = `https://stagetimer.io/r/${roomId}/`;
 
@@ -223,6 +229,8 @@ export default function App() {
       try {
         const savedRoomId = await AsyncStorage.getItem('@roomId');
         const savedApiKey = await AsyncStorage.getItem('@apiKey');
+        const savedRoomsJson = await AsyncStorage.getItem('@savedRooms');
+
         if (savedRoomId !== null) {
           setRoomId(savedRoomId);
           setTempRoomId(savedRoomId);
@@ -230,6 +238,9 @@ export default function App() {
         if (savedApiKey !== null) {
           setApiKey(savedApiKey);
           setTempApiKey(savedApiKey);
+        }
+        if (savedRoomsJson !== null) {
+          setSavedRooms(JSON.parse(savedRoomsJson));
         }
 
         // Sync with Android widget on startup
@@ -431,6 +442,102 @@ export default function App() {
     sendApiRequest('/jump', { milliseconds });
   };
 
+  // --- MULTIPLE ROOMS MANAGEMENT ---
+  const saveRoomsToStorage = async (rooms) => {
+    try {
+      await AsyncStorage.setItem('@savedRooms', JSON.stringify(rooms));
+    } catch (e) {
+      console.error('Failed to save rooms:', e);
+    }
+  };
+
+  const getCurrentRoomName = () => {
+    const currentRoom = savedRooms.find(r => r.roomId === roomId && r.apiKey === apiKey);
+    return currentRoom?.name || roomId || 'No Room';
+  };
+
+  const switchToRoom = async (room) => {
+    triggerHaptic('medium');
+    setRoomId(room.roomId);
+    setApiKey(room.apiKey);
+    setTempRoomId(room.roomId);
+    setTempApiKey(room.apiKey);
+
+    await AsyncStorage.setItem('@roomId', room.roomId);
+    await AsyncStorage.setItem('@apiKey', room.apiKey);
+
+    // Sync with Android widget
+    if (Platform.OS === 'android' && WidgetBridge) {
+      try {
+        await WidgetBridge.saveCredentials(room.roomId, room.apiKey);
+      } catch (widgetErr) {
+        console.warn('Widget sync failed:', widgetErr);
+      }
+    }
+
+    setRoomSwitcherVisible(false);
+    showToast(`Switched to ${room.name}`, 'success');
+  };
+
+  const saveCurrentRoomToList = async () => {
+    if (!roomId || !apiKey) {
+      showToast('No room configured to save', 'error');
+      triggerHaptic('error');
+      return;
+    }
+
+    // Check if already saved
+    const exists = savedRooms.some(r => r.roomId === roomId && r.apiKey === apiKey);
+    if (exists) {
+      showToast('This room is already saved', 'info');
+      return;
+    }
+
+    setNewRoomName('');
+    setAddRoomModalVisible(true);
+  };
+
+  const confirmSaveRoom = async () => {
+    const name = newRoomName.trim() || `Room ${roomId}`;
+    const newRoom = {
+      id: Date.now().toString(),
+      name,
+      roomId,
+      apiKey,
+    };
+
+    const updatedRooms = [...savedRooms, newRoom];
+    setSavedRooms(updatedRooms);
+    await saveRoomsToStorage(updatedRooms);
+
+    setAddRoomModalVisible(false);
+    setNewRoomName('');
+    showToast(`Saved "${name}"`, 'success');
+    triggerHaptic('success');
+  };
+
+  const deleteRoom = (roomToDelete) => {
+    triggerHaptic('medium');
+    Alert.alert(
+      'Delete Room',
+      `Remove "${roomToDelete.name}" from saved rooms?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const updatedRooms = savedRooms.filter(r => r.id !== roomToDelete.id);
+            setSavedRooms(updatedRooms);
+            await saveRoomsToStorage(updatedRooms);
+            showToast(`Removed "${roomToDelete.name}"`, 'success');
+            triggerHaptic('success');
+          },
+        },
+      ]
+    );
+  };
+
   // --- SETUP WIZARD ---
   const openSetupWizard = () => {
     triggerHaptic('medium');
@@ -515,6 +622,23 @@ export default function App() {
             <WebView source={{ uri: viewerUrl }} style={styles.webview} javaScriptEnabled domStorageEnabled startInLoadingState />
           </View>
         </Pressable>
+
+        {/* Room Switcher Bar */}
+        <TouchableOpacity
+          style={styles.roomSwitcherBar}
+          onPress={() => { triggerHaptic('light'); setRoomSwitcherVisible(true); }}
+        >
+          <View style={styles.roomSwitcherLeft}>
+            <Icon name="meeting-room" size={18} color="#00e5ff" />
+            <Text style={styles.roomSwitcherText} numberOfLines={1}>{getCurrentRoomName()}</Text>
+          </View>
+          <View style={styles.roomSwitcherRight}>
+            {savedRooms.length > 0 && (
+              <Text style={styles.roomSwitcherCount}>{savedRooms.length} saved</Text>
+            )}
+            <Icon name="swap-horiz" size={20} color="#666" />
+          </View>
+        </TouchableOpacity>
 
         <ScrollView
           style={styles.middle}
@@ -910,6 +1034,112 @@ export default function App() {
             )}
           </SafeAreaView>
         </Modal>
+
+        {/* Room Switcher Modal */}
+        <Modal
+          visible={roomSwitcherVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setRoomSwitcherVisible(false)}
+        >
+          <View style={styles.roomModalOverlay}>
+            <View style={styles.roomModalContent}>
+              <View style={styles.roomModalHeader}>
+                <Text style={styles.roomModalTitle}>Switch Room</Text>
+                <TouchableOpacity onPress={() => setRoomSwitcherVisible(false)}>
+                  <Icon name="close" size={24} color="#888" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Current Room */}
+              <View style={styles.currentRoomSection}>
+                <Text style={styles.roomSectionLabel}>Current</Text>
+                <View style={styles.currentRoomItem}>
+                  <Icon name="meeting-room" size={20} color="#00e5ff" />
+                  <Text style={styles.currentRoomText}>{getCurrentRoomName()}</Text>
+                  <TouchableOpacity onPress={saveCurrentRoomToList} style={styles.saveRoomButton}>
+                    <Icon name="bookmark-border" size={20} color="#00e5ff" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Saved Rooms */}
+              {savedRooms.length > 0 && (
+                <View style={styles.savedRoomsSection}>
+                  <Text style={styles.roomSectionLabel}>Saved Rooms</Text>
+                  <ScrollView style={styles.savedRoomsList}>
+                    {savedRooms.map((room) => {
+                      const isActive = room.roomId === roomId && room.apiKey === apiKey;
+                      return (
+                        <TouchableOpacity
+                          key={room.id}
+                          style={[styles.savedRoomItem, isActive && styles.savedRoomItemActive]}
+                          onPress={() => !isActive && switchToRoom(room)}
+                        >
+                          <View style={styles.savedRoomInfo}>
+                            <Text style={[styles.savedRoomName, isActive && styles.savedRoomNameActive]}>{room.name}</Text>
+                            <Text style={styles.savedRoomId}>{room.roomId}</Text>
+                          </View>
+                          {isActive ? (
+                            <Icon name="check-circle" size={24} color="#28a745" />
+                          ) : (
+                            <TouchableOpacity onPress={() => deleteRoom(room)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                              <Icon name="delete-outline" size={22} color="#dc3545" />
+                            </TouchableOpacity>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              )}
+
+              {savedRooms.length === 0 && (
+                <View style={styles.noRoomsMessage}>
+                  <Icon name="bookmark-border" size={40} color="#333" />
+                  <Text style={styles.noRoomsText}>No saved rooms yet</Text>
+                  <Text style={styles.noRoomsSubtext}>Save your current room to quickly switch between multiple rooms</Text>
+                </View>
+              )}
+
+              <TouchableOpacity style={styles.roomModalButton} onPress={() => { setRoomSwitcherVisible(false); setIsSettingsExpanded(true); }}>
+                <Icon name="settings" size={20} color="#00e5ff" />
+                <Text style={styles.roomModalButtonText}>Configure New Room</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Add Room Name Modal */}
+        <Modal
+          visible={addRoomModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setAddRoomModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Save Room</Text>
+              <Text style={styles.inputLabel}>Room Name</Text>
+              <TextInput
+                style={styles.input}
+                value={newRoomName}
+                onChangeText={setNewRoomName}
+                placeholder={`Room ${roomId}`}
+                placeholderTextColor="#666"
+                autoFocus
+              />
+              <View style={styles.modalButtons}>
+                <TouchableOpacity style={styles.modalCancelButton} onPress={() => setAddRoomModalVisible(false)}>
+                  <Text style={styles.modalCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.modalCreateButton} onPress={confirmSaveRoom}>
+                  <Text style={styles.modalCreateText}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </SafeAreaProvider>
   );
@@ -933,7 +1163,38 @@ const styles = StyleSheet.create({
   webview: { flex: 1 },
 
   // Middle scroll area
-  middle: { flex: 1, paddingHorizontal: 10, paddingTop: 20 },
+  middle: { flex: 1, paddingHorizontal: 10, paddingTop: 10 },
+
+  // Room Switcher Bar
+  roomSwitcherBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginHorizontal: 10, marginTop: 8, paddingVertical: 10, paddingHorizontal: 14, backgroundColor: '#1a1a1a', borderRadius: 10, borderWidth: 1, borderColor: '#333' },
+  roomSwitcherLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  roomSwitcherText: { color: '#fff', fontSize: 14, fontWeight: '600', marginLeft: 8, flex: 1 },
+  roomSwitcherRight: { flexDirection: 'row', alignItems: 'center' },
+  roomSwitcherCount: { color: '#666', fontSize: 12, marginRight: 8 },
+
+  // Room Switcher Modal
+  roomModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'flex-end' },
+  roomModalContent: { backgroundColor: '#1a1a1a', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: '80%' },
+  roomModalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  roomModalTitle: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
+  currentRoomSection: { marginBottom: 20 },
+  roomSectionLabel: { color: '#888', fontSize: 12, textTransform: 'uppercase', marginBottom: 8 },
+  currentRoomItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#222', padding: 14, borderRadius: 10 },
+  currentRoomText: { color: '#fff', fontSize: 16, flex: 1, marginLeft: 10 },
+  saveRoomButton: { padding: 8 },
+  savedRoomsSection: { marginBottom: 20 },
+  savedRoomsList: { maxHeight: 250 },
+  savedRoomItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#222', padding: 14, borderRadius: 10, marginBottom: 8 },
+  savedRoomItemActive: { borderWidth: 2, borderColor: '#28a745' },
+  savedRoomInfo: { flex: 1 },
+  savedRoomName: { color: '#fff', fontSize: 16 },
+  savedRoomNameActive: { color: '#28a745', fontWeight: '600' },
+  savedRoomId: { color: '#666', fontSize: 12, marginTop: 2 },
+  noRoomsMessage: { alignItems: 'center', paddingVertical: 30 },
+  noRoomsText: { color: '#666', fontSize: 16, marginTop: 12 },
+  noRoomsSubtext: { color: '#444', fontSize: 13, textAlign: 'center', marginTop: 8, paddingHorizontal: 20 },
+  roomModalButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#00e5ff', paddingVertical: 14, borderRadius: 10, marginTop: 10 },
+  roomModalButtonText: { color: '#00e5ff', fontSize: 16, fontWeight: '600', marginLeft: 8 },
 
   // Foldable sections
   foldableFrame: { marginBottom: 20, padding: 6, borderRadius: 18, borderWidth: 3, borderColor: '#00e5ff', backgroundColor: '#00181c', shadowColor: '#00e5ff', shadowOpacity: 0.8, shadowRadius: 12, elevation: 10 },
