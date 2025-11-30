@@ -1,6 +1,5 @@
 import WidgetKit
 import SwiftUI
-import Intents
 
 // MARK: - Widget Entry
 struct StageTimerEntry: TimelineEntry {
@@ -31,38 +30,99 @@ struct StageTimerProvider: TimelineProvider {
             isConfigured: isConfigured
         )
 
-        let timeline = Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(60)))
+        // Refresh every 15 minutes (minimum allowed by iOS)
+        let timeline = Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(900)))
         completion(timeline)
     }
 }
 
-// MARK: - Widget View
-struct StageTimerWidgetEntryView: View {
+// MARK: - Small Widget View
+struct SmallWidgetView: View {
     var entry: StageTimerProvider.Entry
-    @Environment(\.widgetFamily) var family
 
     var body: some View {
         ZStack {
-            // Background
-            Color(red: 0.067, green: 0.067, blue: 0.067)
+            ContainerRelativeShape()
+                .fill(Color(red: 0.067, green: 0.067, blue: 0.067))
 
             VStack(spacing: 8) {
-                // Title
-                Text(entry.timerName)
-                    .font(.system(size: 14, weight: .bold))
+                Image(systemName: "timer")
+                    .font(.system(size: 28))
                     .foregroundColor(Color(red: 0, green: 0.898, blue: 1))
 
-                // Timer display placeholder
-                Text("--:--")
-                    .font(.system(size: 32, weight: .bold, design: .monospaced))
+                Text("StageTimer")
+                    .font(.system(size: 12, weight: .bold))
                     .foregroundColor(.white)
 
-                if family != .systemSmall {
-                    // Control buttons
-                    HStack(spacing: 20) {
-                        WidgetButton(systemName: "play.fill", color: .green, action: "play")
-                        WidgetButton(systemName: "stop.fill", color: .red, action: "stop")
-                        WidgetButton(systemName: "forward.end.fill", color: Color(red: 0, green: 0.898, blue: 1), action: "next")
+                Text("Tap to open")
+                    .font(.system(size: 10))
+                    .foregroundColor(.gray)
+            }
+        }
+        .widgetURL(URL(string: "stagetimerremote://open"))
+    }
+}
+
+// MARK: - Medium Widget View
+struct MediumWidgetView: View {
+    var entry: StageTimerProvider.Entry
+
+    var body: some View {
+        ZStack {
+            ContainerRelativeShape()
+                .fill(Color(red: 0.067, green: 0.067, blue: 0.067))
+
+            VStack(spacing: 12) {
+                // Title row
+                HStack {
+                    Image(systemName: "timer")
+                        .font(.system(size: 20))
+                        .foregroundColor(Color(red: 0, green: 0.898, blue: 1))
+
+                    Text(entry.timerName)
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.white)
+
+                    Spacer()
+                }
+                .padding(.horizontal)
+
+                // Control buttons
+                HStack(spacing: 24) {
+                    // Play/Pause
+                    Link(destination: URL(string: "stagetimerremote://toggle")!) {
+                        WidgetButtonView(
+                            systemName: "play.fill",
+                            color: Color(red: 0.157, green: 0.655, blue: 0.271),
+                            size: 44
+                        )
+                    }
+
+                    // Stop
+                    Link(destination: URL(string: "stagetimerremote://stop")!) {
+                        WidgetButtonView(
+                            systemName: "stop.fill",
+                            color: Color(red: 0.863, green: 0.208, blue: 0.271),
+                            size: 44
+                        )
+                    }
+
+                    // Next
+                    Link(destination: URL(string: "stagetimerremote://next")!) {
+                        WidgetButtonView(
+                            systemName: "forward.end.fill",
+                            color: Color(red: 0, green: 0.898, blue: 1),
+                            size: 44
+                        )
+                    }
+
+                    // Previous
+                    Link(destination: URL(string: "stagetimerremote://previous")!) {
+                        WidgetButtonView(
+                            systemName: "backward.end.fill",
+                            color: Color(red: 0, green: 0.898, blue: 1),
+                            size: 44
+                        )
                     }
                 }
             }
@@ -71,31 +131,53 @@ struct StageTimerWidgetEntryView: View {
     }
 }
 
-struct WidgetButton: View {
+// MARK: - Widget Button
+struct WidgetButtonView: View {
     let systemName: String
     let color: Color
-    let action: String
+    let size: CGFloat
 
     var body: some View {
-        Link(destination: URL(string: "stagetimerremote://\(action)")!) {
-            Image(systemName: systemName)
-                .font(.system(size: 20))
-                .foregroundColor(color)
-                .frame(width: 44, height: 44)
-                .background(Color.white.opacity(0.1))
-                .clipShape(Circle())
+        Image(systemName: systemName)
+            .font(.system(size: size * 0.4))
+            .foregroundColor(color)
+            .frame(width: size, height: size)
+            .background(Color.white.opacity(0.1))
+            .clipShape(Circle())
+    }
+}
+
+// MARK: - Widget Entry View
+struct StageTimerWidgetEntryView: View {
+    var entry: StageTimerProvider.Entry
+    @Environment(\.widgetFamily) var family
+
+    var body: some View {
+        switch family {
+        case .systemSmall:
+            SmallWidgetView(entry: entry)
+        case .systemMedium:
+            MediumWidgetView(entry: entry)
+        default:
+            MediumWidgetView(entry: entry)
         }
     }
 }
 
 // MARK: - Widget Configuration
-@main
 struct StageTimerWidget: Widget {
     let kind: String = "StageTimerWidget"
 
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: StageTimerProvider()) { entry in
-            StageTimerWidgetEntryView(entry: entry)
+            if #available(iOS 17.0, *) {
+                StageTimerWidgetEntryView(entry: entry)
+                    .containerBackground(.fill.tertiary, for: .widget)
+            } else {
+                StageTimerWidgetEntryView(entry: entry)
+                    .padding()
+                    .background()
+            }
         }
         .configurationDisplayName("StageTimer Remote")
         .description("Control your StageTimer from your home screen")
@@ -103,10 +185,23 @@ struct StageTimerWidget: Widget {
     }
 }
 
-// MARK: - Preview
-struct StageTimerWidget_Previews: PreviewProvider {
-    static var previews: some View {
-        StageTimerWidgetEntryView(entry: StageTimerEntry(date: Date(), timerName: "StageTimer Remote", isConfigured: true))
-            .previewContext(WidgetPreviewContext(family: .systemMedium))
+// MARK: - Widget Bundle (if you have multiple widgets)
+@main
+struct StageTimerWidgetBundle: WidgetBundle {
+    var body: some Widget {
+        StageTimerWidget()
     }
+}
+
+// MARK: - Previews
+#Preview(as: .systemSmall) {
+    StageTimerWidget()
+} timeline: {
+    StageTimerEntry(date: .now, timerName: "StageTimer Remote", isConfigured: true)
+}
+
+#Preview(as: .systemMedium) {
+    StageTimerWidget()
+} timeline: {
+    StageTimerEntry(date: .now, timerName: "StageTimer Remote", isConfigured: true)
 }

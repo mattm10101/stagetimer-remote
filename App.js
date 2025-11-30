@@ -13,6 +13,7 @@ import {
   Alert,
   NativeModules,
   Platform,
+  Linking,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
@@ -278,6 +279,48 @@ export default function App() {
       showToast('Reconnecting...', 'info');
     }
   };
+
+  // --- iOS WIDGET DEEP LINK HANDLER ---
+  useEffect(() => {
+    const handleDeepLink = (event) => {
+      const url = event.url || event;
+      if (!url || typeof url !== 'string') return;
+
+      const action = url.replace('stagetimerremote://', '');
+      triggerHaptic('medium');
+
+      switch (action) {
+        case 'toggle':
+          sendApiRequest('/start_or_stop');
+          break;
+        case 'stop':
+          sendApiRequest('/stop');
+          break;
+        case 'next':
+          sendApiRequest('/next');
+          break;
+        case 'previous':
+          sendApiRequest('/previous');
+          break;
+        case 'open':
+        default:
+          // Just open the app, no action needed
+          break;
+      }
+    };
+
+    // Handle deep link when app is opened from widget
+    Linking.getInitialURL().then((url) => {
+      if (url) handleDeepLink(url);
+    });
+
+    // Handle deep link when app is already running
+    const subscription = Linking.addEventListener('url', handleDeepLink);
+
+    return () => {
+      subscription?.remove();
+    };
+  }, [sendApiRequest]);
 
   // --- EVENT HANDLERS ---
   const handleUpdateTimerName = async (timerId, newName) => {
