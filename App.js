@@ -21,6 +21,7 @@ import { MaterialIcons as Icon } from '@expo/vector-icons';
 import { io } from 'socket.io-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
+import * as Clipboard from 'expo-clipboard';
 
 // Widget bridge for Android
 const { WidgetBridge } = NativeModules;
@@ -123,6 +124,13 @@ export default function App() {
   const [customMinutes, setCustomMinutes] = useState('');
   const [customSeconds, setCustomSeconds] = useState('');
   const [customTimerName, setCustomTimerName] = useState('');
+
+  // Setup wizard states
+  const [setupWizardVisible, setSetupWizardVisible] = useState(false);
+  const [setupStep, setSetupStep] = useState(1); // 1: intro, 2: browser, 3: api key
+  const [detectedRoomId, setDetectedRoomId] = useState('');
+  const [wizardApiKey, setWizardApiKey] = useState('');
+  const setupWebViewRef = useRef(null);
 
   const socketRef = useRef(null);
   const viewerUrl = `https://stagetimer.io/r/${roomId}/`;
@@ -423,6 +431,78 @@ export default function App() {
     sendApiRequest('/jump', { milliseconds });
   };
 
+  // --- SETUP WIZARD ---
+  const openSetupWizard = () => {
+    triggerHaptic('medium');
+    setSetupStep(1);
+    setDetectedRoomId('');
+    setWizardApiKey('');
+    setSetupWizardVisible(true);
+  };
+
+  const handleSetupWebViewNavigationChange = (navState) => {
+    const url = navState.url;
+    // Extract room ID from URL like https://stagetimer.io/r/ROOMID/ or /r/ROOMID/controller
+    const roomMatch = url.match(/stagetimer\.io\/r\/([A-Z0-9]+)/i);
+    if (roomMatch && roomMatch[1]) {
+      const foundRoomId = roomMatch[1].toUpperCase();
+      if (foundRoomId !== detectedRoomId) {
+        setDetectedRoomId(foundRoomId);
+        triggerHaptic('success');
+      }
+    }
+  };
+
+  const handlePasteApiKey = async () => {
+    try {
+      const clipboardContent = await Clipboard.getStringAsync();
+      if (clipboardContent && clipboardContent.length > 10) {
+        setWizardApiKey(clipboardContent.trim());
+        triggerHaptic('success');
+        showToast('API key pasted!', 'success');
+      } else {
+        showToast('No valid API key found in clipboard', 'error');
+        triggerHaptic('error');
+      }
+    } catch (e) {
+      showToast('Failed to read clipboard', 'error');
+      triggerHaptic('error');
+    }
+  };
+
+  const completeSetupWizard = async () => {
+    if (!detectedRoomId || !wizardApiKey) {
+      showToast('Please complete both steps', 'error');
+      triggerHaptic('error');
+      return;
+    }
+
+    try {
+      await AsyncStorage.setItem('@roomId', detectedRoomId);
+      await AsyncStorage.setItem('@apiKey', wizardApiKey);
+      setRoomId(detectedRoomId);
+      setApiKey(wizardApiKey);
+      setTempRoomId(detectedRoomId);
+      setTempApiKey(wizardApiKey);
+
+      // Sync with Android widget
+      if (Platform.OS === 'android' && WidgetBridge) {
+        try {
+          await WidgetBridge.saveCredentials(detectedRoomId, wizardApiKey);
+        } catch (widgetErr) {
+          console.warn('Widget sync failed:', widgetErr);
+        }
+      }
+
+      setSetupWizardVisible(false);
+      showToast('Setup complete! Connected to your room.', 'success');
+      triggerHaptic('success');
+    } catch (e) {
+      showToast('Failed to save settings', 'error');
+      triggerHaptic('error');
+    }
+  };
+
   // --- RENDER ---
   return (
     <SafeAreaProvider>
@@ -568,6 +648,17 @@ export default function App() {
             </Pressable>
             {isSettingsExpanded && (
               <View style={styles.foldableContent}>
+                <TouchableOpacity style={styles.easySetupButton} onPress={openSetupWizard}>
+                  <Icon name="auto-fix-high" size={24} color="#00181c" />
+                  <Text style={styles.easySetupButtonText}>Easy Setup Wizard</Text>
+                </TouchableOpacity>
+
+                <View style={styles.settingsDivider}>
+                  <View style={styles.settingsDividerLine} />
+                  <Text style={styles.settingsDividerText}>or enter manually</Text>
+                  <View style={styles.settingsDividerLine} />
+                </View>
+
                 <Text style={styles.inputLabel}>Room ID</Text>
                 <TextInput
                   style={styles.input}
@@ -697,6 +788,128 @@ export default function App() {
             </View>
           </View>
         </Modal>
+
+        {/* Setup Wizard Modal */}
+        <Modal
+          visible={setupWizardVisible}
+          animationType="slide"
+          onRequestClose={() => setSetupWizardVisible(false)}
+        >
+          <SafeAreaView style={styles.wizardContainer}>
+            {/* Header */}
+            <View style={styles.wizardHeader}>
+              <TouchableOpacity onPress={() => setSetupWizardVisible(false)}>
+                <Icon name="close" size={28} color="#fff" />
+              </TouchableOpacity>
+              <Text style={styles.wizardTitle}>Easy Setup</Text>
+              <View style={{ width: 28 }} />
+            </View>
+
+            {/* Step 1: Intro */}
+            {setupStep === 1 && (
+              <View style={styles.wizardContent}>
+                <Icon name="timer" size={80} color="#00e5ff" style={{ marginBottom: 24 }} />
+                <Text style={styles.wizardHeading}>Connect to StageTimer</Text>
+                <Text style={styles.wizardText}>
+                  We'll open StageTimer.io in a browser. Log in and navigate to your room's controller page.
+                </Text>
+                <Text style={styles.wizardText}>
+                  We'll automatically detect your Room ID from the URL!
+                </Text>
+                <TouchableOpacity style={styles.wizardPrimaryButton} onPress={() => setSetupStep(2)}>
+                  <Text style={styles.wizardPrimaryButtonText}>Open StageTimer</Text>
+                  <Icon name="arrow-forward" size={20} color="#00181c" />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Step 2: Browser to get Room ID */}
+            {setupStep === 2 && (
+              <View style={styles.wizardBrowserContainer}>
+                <View style={styles.wizardBrowserHeader}>
+                  <View style={styles.wizardStatusRow}>
+                    <Icon name={detectedRoomId ? 'check-circle' : 'radio-button-unchecked'} size={20} color={detectedRoomId ? '#28a745' : '#666'} />
+                    <Text style={[styles.wizardStatusText, detectedRoomId && styles.wizardStatusTextSuccess]}>
+                      {detectedRoomId ? `Room ID: ${detectedRoomId}` : 'Navigate to your room...'}
+                    </Text>
+                  </View>
+                  {detectedRoomId && (
+                    <TouchableOpacity style={styles.wizardNextStepButton} onPress={() => setSetupStep(3)}>
+                      <Text style={styles.wizardNextStepButtonText}>Next: Get API Key</Text>
+                      <Icon name="arrow-forward" size={16} color="#00181c" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <WebView
+                  ref={setupWebViewRef}
+                  source={{ uri: 'https://stagetimer.io/r/generate/' }}
+                  style={styles.wizardWebView}
+                  onNavigationStateChange={handleSetupWebViewNavigationChange}
+                  javaScriptEnabled
+                  domStorageEnabled
+                  startInLoadingState
+                  sharedCookiesEnabled
+                />
+              </View>
+            )}
+
+            {/* Step 3: Get API Key */}
+            {setupStep === 3 && (
+              <View style={styles.wizardContent}>
+                <View style={styles.wizardCheckItem}>
+                  <Icon name="check-circle" size={24} color="#28a745" />
+                  <Text style={styles.wizardCheckText}>Room ID: {detectedRoomId}</Text>
+                </View>
+
+                <Text style={styles.wizardHeading}>Now get your API Key</Text>
+
+                <View style={styles.wizardInstructions}>
+                  <Text style={styles.wizardInstructionStep}>1. In StageTimer's controller page, tap the menu icon (☰)</Text>
+                  <Text style={styles.wizardInstructionStep}>2. Look for "API Documentation"</Text>
+                  <Text style={styles.wizardInstructionStep}>3. Copy your API Key</Text>
+                  <Text style={styles.wizardInstructionStep}>4. Come back here and tap "Paste API Key"</Text>
+                </View>
+
+                <TouchableOpacity style={styles.wizardOpenBrowserButton} onPress={() => Linking.openURL(`https://stagetimer.io/r/${detectedRoomId}/controller/`)}>
+                  <Icon name="open-in-new" size={20} color="#00e5ff" />
+                  <Text style={styles.wizardOpenBrowserButtonText}>Open Controller in Browser</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.wizardPasteButton} onPress={handlePasteApiKey}>
+                  <Icon name="content-paste" size={24} color="#00181c" />
+                  <Text style={styles.wizardPasteButtonText}>Paste API Key from Clipboard</Text>
+                </TouchableOpacity>
+
+                {wizardApiKey && (
+                  <View style={styles.wizardApiKeyPreview}>
+                    <Icon name="check-circle" size={20} color="#28a745" />
+                    <Text style={styles.wizardApiKeyPreviewText}>API Key: {wizardApiKey.substring(0, 8)}...{wizardApiKey.slice(-4)}</Text>
+                  </View>
+                )}
+
+                <Text style={styles.wizardOrText}>or enter manually:</Text>
+                <TextInput
+                  style={styles.wizardInput}
+                  value={wizardApiKey}
+                  onChangeText={setWizardApiKey}
+                  placeholder="Paste or type your API key"
+                  placeholderTextColor="#666"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+
+                <TouchableOpacity
+                  style={[styles.wizardPrimaryButton, (!detectedRoomId || !wizardApiKey) && styles.wizardButtonDisabled]}
+                  onPress={completeSetupWizard}
+                  disabled={!detectedRoomId || !wizardApiKey}
+                >
+                  <Icon name="check" size={20} color="#00181c" />
+                  <Text style={styles.wizardPrimaryButtonText}>Complete Setup</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </SafeAreaView>
+        </Modal>
       </SafeAreaView>
     </SafeAreaProvider>
   );
@@ -799,4 +1012,42 @@ const styles = StyleSheet.create({
   modalCancelText: { color: '#ccc', fontSize: 16 },
   modalCreateButton: { flex: 1, padding: 14, borderRadius: 8, backgroundColor: '#00e5ff', marginLeft: 8, alignItems: 'center' },
   modalCreateText: { color: '#00181c', fontSize: 16, fontWeight: 'bold' },
+
+  // Easy Setup Button
+  easySetupButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#00e5ff', borderRadius: 8, paddingVertical: 14, marginTop: 10, marginBottom: 16 },
+  easySetupButtonText: { color: '#00181c', fontSize: 16, fontWeight: 'bold', marginLeft: 8 },
+  settingsDivider: { flexDirection: 'row', alignItems: 'center', marginVertical: 16 },
+  settingsDividerLine: { flex: 1, height: 1, backgroundColor: '#333' },
+  settingsDividerText: { color: '#666', marginHorizontal: 12, fontSize: 12 },
+
+  // Setup Wizard
+  wizardContainer: { flex: 1, backgroundColor: '#111' },
+  wizardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#333' },
+  wizardTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+  wizardContent: { flex: 1, padding: 24, alignItems: 'center', justifyContent: 'center' },
+  wizardHeading: { color: '#fff', fontSize: 24, fontWeight: 'bold', marginBottom: 16, textAlign: 'center' },
+  wizardText: { color: '#ccc', fontSize: 16, textAlign: 'center', marginBottom: 12, lineHeight: 24 },
+  wizardPrimaryButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#00e5ff', paddingVertical: 16, paddingHorizontal: 32, borderRadius: 12, marginTop: 24 },
+  wizardPrimaryButtonText: { color: '#00181c', fontSize: 18, fontWeight: 'bold', marginRight: 8 },
+  wizardButtonDisabled: { opacity: 0.5 },
+  wizardBrowserContainer: { flex: 1 },
+  wizardBrowserHeader: { backgroundColor: '#1a1a1a', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#333' },
+  wizardStatusRow: { flexDirection: 'row', alignItems: 'center' },
+  wizardStatusText: { color: '#888', fontSize: 14, marginLeft: 8 },
+  wizardStatusTextSuccess: { color: '#28a745' },
+  wizardNextStepButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#00e5ff', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, marginTop: 12 },
+  wizardNextStepButtonText: { color: '#00181c', fontSize: 14, fontWeight: 'bold', marginRight: 4 },
+  wizardWebView: { flex: 1 },
+  wizardCheckItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(40, 167, 69, 0.15)', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 8, marginBottom: 24, width: '100%' },
+  wizardCheckText: { color: '#28a745', fontSize: 16, fontWeight: '600', marginLeft: 10 },
+  wizardInstructions: { backgroundColor: '#1a1a1a', borderRadius: 12, padding: 16, width: '100%', marginBottom: 20 },
+  wizardInstructionStep: { color: '#ccc', fontSize: 14, lineHeight: 24, marginBottom: 8 },
+  wizardOpenBrowserButton: { flexDirection: 'row', alignItems: 'center', borderWidth: 2, borderColor: '#00e5ff', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 8, marginBottom: 16 },
+  wizardOpenBrowserButtonText: { color: '#00e5ff', fontSize: 14, fontWeight: '600', marginLeft: 8 },
+  wizardPasteButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#00e5ff', paddingVertical: 14, paddingHorizontal: 24, borderRadius: 8, marginBottom: 16 },
+  wizardPasteButtonText: { color: '#00181c', fontSize: 16, fontWeight: 'bold', marginLeft: 8 },
+  wizardApiKeyPreview: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(40, 167, 69, 0.15)', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, marginBottom: 16, width: '100%' },
+  wizardApiKeyPreviewText: { color: '#28a745', fontSize: 14, marginLeft: 8 },
+  wizardOrText: { color: '#666', fontSize: 12, marginBottom: 8 },
+  wizardInput: { backgroundColor: '#000', color: '#fff', borderRadius: 8, borderWidth: 1, borderColor: '#333', paddingHorizontal: 16, paddingVertical: 12, fontSize: 16, width: '100%', marginBottom: 24 },
 });
